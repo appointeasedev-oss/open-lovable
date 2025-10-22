@@ -50,39 +50,43 @@ export const appConfig = {
   
   // AI Model Configuration
   ai: {
-    // Default AI model
-    defaultModel: 'moonshotai/kimi-k2-instruct-0905',
-    
-    // Available models
+    // Default AI model (OpenRouter free model)
+    defaultModel: 'deepseek/deepseek-chat-v3.1:free',
+
+    // Available free models from OpenRouter
     availableModels: [
-      'openai/gpt-5',
-      'moonshotai/kimi-k2-instruct-0905',
-      'anthropic/claude-sonnet-4-20250514',
-      'google/gemini-2.0-flash-exp'
+      'deepseek/deepseek-chat-v3.1:free',
+      'meta-llama/llama-3.3-70b-instruct:free',
+      'google/gemini-2.0-flash-exp:free',
+      'qwen/qwen-2.5-72b-instruct:free',
+      'mistralai/mistral-small-3.2-24b-instruct:free',
+      'meta-llama/llama-3.3-8b-instruct:free'
     ],
-    
+
     // Model display names
     modelDisplayNames: {
-      'openai/gpt-5': 'GPT-5',
-      'moonshotai/kimi-k2-instruct-0905': 'Kimi K2 (Groq)',
-      'anthropic/claude-sonnet-4-20250514': 'Sonnet 4',
-      'google/gemini-2.0-flash-exp': 'Gemini 2.0 Flash (Experimental)'
+      'deepseek/deepseek-chat-v3.1:free': 'DeepSeek V3.1',
+      'meta-llama/llama-3.3-70b-instruct:free': 'Llama 3.3 70B',
+      'google/gemini-2.0-flash-exp:free': 'Gemini 2.0 Flash',
+      'qwen/qwen-2.5-72b-instruct:free': 'Qwen 2.5 72B',
+      'mistralai/mistral-small-3.2-24b-instruct:free': 'Mistral Small 3.2',
+      'meta-llama/llama-3.3-8b-instruct:free': 'Llama 3.3 8B'
     } as Record<string, string>,
-    
+
     // Model API configuration
     modelApiConfig: {
-      'moonshotai/kimi-k2-instruct-0905': {
-        provider: 'groq',
-        model: 'moonshotai/kimi-k2-instruct-0905'
+      'deepseek/deepseek-chat-v3.1:free': {
+        provider: 'openrouter',
+        model: 'deepseek/deepseek-chat-v3.1:free'
       }
     },
-    
+
     // Temperature settings for non-reasoning models
     defaultTemperature: 0.7,
-    
+
     // Max tokens for code generation
     maxTokens: 8000,
-    
+
     // Max tokens for truncation recovery
     truncationRecoveryMaxTokens: 4000,
   },

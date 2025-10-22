@@ -1,8 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createGroq } from '@ai-sdk/groq';
-import { createAnthropic } from '@ai-sdk/anthropic';
 import { createOpenAI } from '@ai-sdk/openai';
-import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { streamText } from 'ai';
 import type { SandboxState } from '@/types/sandbox';
 import { selectFilesForEdit, getFileContents, formatFilesForAI } from '@/lib/context-selector';
@@ -14,34 +11,18 @@ import { appConfig } from '@/config/app.config';
 // Force dynamic route to enable streaming
 export const dynamic = 'force-dynamic';
 
-// Check if we're using Vercel AI Gateway
-const isUsingAIGateway = !!process.env.AI_GATEWAY_API_KEY;
-const aiGatewayBaseURL = 'https://ai-gateway.vercel.sh/v1';
+// OpenRouter configuration
+const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 
-console.log('[generate-ai-code-stream] AI Gateway config:', {
-  isUsingAIGateway,
-  hasGroqKey: !!process.env.GROQ_API_KEY,
-  hasAIGatewayKey: !!process.env.AI_GATEWAY_API_KEY
+console.log('[generate-ai-code-stream] OpenRouter config:', {
+  hasOpenRouterKey: !!process.env.OPENROUTER_API_KEY,
+  baseURL: OPENROUTER_BASE_URL
 });
 
-const groq = createGroq({
-  apiKey: process.env.AI_GATEWAY_API_KEY ?? process.env.GROQ_API_KEY,
-  baseURL: isUsingAIGateway ? aiGatewayBaseURL : undefined,
-});
-
-const anthropic = createAnthropic({
-  apiKey: process.env.AI_GATEWAY_API_KEY ?? process.env.ANTHROPIC_API_KEY,
-  baseURL: isUsingAIGateway ? aiGatewayBaseURL : (process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com/v1'),
-});
-
-const googleGenerativeAI = createGoogleGenerativeAI({
-  apiKey: process.env.AI_GATEWAY_API_KEY ?? process.env.GEMINI_API_KEY,
-  baseURL: isUsingAIGateway ? aiGatewayBaseURL : undefined,
-});
-
-const openai = createOpenAI({
-  apiKey: process.env.AI_GATEWAY_API_KEY ?? process.env.OPENAI_API_KEY,
-  baseURL: isUsingAIGateway ? aiGatewayBaseURL : process.env.OPENAI_BASE_URL,
+// Create OpenRouter client using OpenAI SDK (compatible API)
+const openrouter = createOpenAI({
+  apiKey: process.env.OPENROUTER_API_KEY || '',
+  baseURL: OPENROUTER_BASE_URL,
 });
 
 // Helper function to analyze user preferences from conversation history
@@ -90,7 +71,7 @@ declare global {
 
 export async function POST(request: NextRequest) {
   try {
-    const { prompt, model = 'openai/gpt-oss-20b', context, isEdit = false } = await request.json();
+    const { prompt, model = 'deepseek/deepseek-chat-v3.1:free', context, isEdit = false } = await request.json();
     
     console.log('[generate-ai-code-stream] Received request:');
     console.log('[generate-ai-code-stream] - prompt:', prompt);
@@ -1211,36 +1192,12 @@ MORPH FAST APPLY MODE (EDIT-ONLY):
         
         // Track packages that need to be installed
         const packagesToInstall: string[] = [];
-        
-        // Determine which provider to use based on model
-        const isAnthropic = model.startsWith('anthropic/');
-        const isGoogle = model.startsWith('google/');
-        const isOpenAI = model.startsWith('openai/');
-        const isKimiGroq = model === 'moonshotai/kimi-k2-instruct-0905';
-        const modelProvider = isAnthropic ? anthropic : 
-                              (isOpenAI ? openai : 
-                              (isGoogle ? googleGenerativeAI : 
-                              (isKimiGroq ? groq : groq)));
-        
-        // Fix model name transformation for different providers
-        let actualModel: string;
-        if (isAnthropic) {
-          actualModel = model.replace('anthropic/', '');
-        } else if (isOpenAI) {
-          actualModel = model.replace('openai/', '');
-        } else if (isKimiGroq) {
-          // Kimi on Groq - use full model string
-          actualModel = 'moonshotai/kimi-k2-instruct-0905';
-        } else if (isGoogle) {
-          // Google uses specific model names - convert our naming to theirs  
-          actualModel = model.replace('google/', '');
-        } else {
-          actualModel = model;
-        }
 
-        console.log(`[generate-ai-code-stream] Using provider: ${isAnthropic ? 'Anthropic' : isGoogle ? 'Google' : isOpenAI ? 'OpenAI' : 'Groq'}, model: ${actualModel}`);
-        console.log(`[generate-ai-code-stream] AI Gateway enabled: ${isUsingAIGateway}`);
-        console.log(`[generate-ai-code-stream] Model string: ${model}`);
+        // All models go through OpenRouter
+        const modelProvider = openrouter;
+        const actualModel = model; // Use the full model string for OpenRouter
+
+        console.log(`[generate-ai-code-stream] Using OpenRouter with model: ${actualModel}`);
 
         // Make streaming API call with appropriate provider
         const streamOptions: any = {
@@ -1311,19 +1268,8 @@ It's better to have 3 complete files than 10 incomplete files.`
           // We use XML tags for package detection instead
         };
         
-        // Add temperature for non-reasoning models
-        if (!model.startsWith('openai/gpt-5')) {
-          streamOptions.temperature = 0.7;
-        }
-        
-        // Add reasoning effort for GPT-5 models
-        if (isOpenAI) {
-          streamOptions.experimental_providerMetadata = {
-            openai: {
-              reasoningEffort: 'high'
-            }
-          };
-        }
+        // Add temperature for all OpenRouter models
+        streamOptions.temperature = 0.7;
         
         let result;
         let retryCount = 0;
@@ -1335,47 +1281,32 @@ It's better to have 3 complete files than 10 incomplete files.`
             break; // Success, exit retry loop
           } catch (streamError: any) {
             console.error(`[generate-ai-code-stream] Error calling streamText (attempt ${retryCount + 1}/${maxRetries + 1}):`, streamError);
-            
-            // Check if this is a Groq service unavailable error
-            const isGroqServiceError = isKimiGroq && streamError.message?.includes('Service unavailable');
-            const isRetryableError = streamError.message?.includes('Service unavailable') || 
+
+            const isRetryableError = streamError.message?.includes('Service unavailable') ||
                                     streamError.message?.includes('rate limit') ||
                                     streamError.message?.includes('timeout');
-            
+
             if (retryCount < maxRetries && isRetryableError) {
               retryCount++;
               console.log(`[generate-ai-code-stream] Retrying in ${retryCount * 2} seconds...`);
-              
-              // Send progress update about retry
-              await sendProgress({ 
-                type: 'info', 
-                message: `Service temporarily unavailable, retrying (attempt ${retryCount + 1}/${maxRetries + 1})...` 
+
+              await sendProgress({
+                type: 'info',
+                message: `Service temporarily unavailable, retrying (attempt ${retryCount + 1}/${maxRetries + 1})...`
               });
-              
-              // Wait before retry with exponential backoff
+
               await new Promise(resolve => setTimeout(resolve, retryCount * 2000));
-              
-              // If Groq fails, try switching to a fallback model
-              if (isGroqServiceError && retryCount === maxRetries) {
-                console.log('[generate-ai-code-stream] Groq service unavailable, falling back to GPT-4');
-                streamOptions.model = openai('gpt-4-turbo');
-                actualModel = 'gpt-4-turbo';
-              }
             } else {
-              // Final error, send to user
-              await sendProgress({ 
-                type: 'error', 
-                message: `Failed to initialize ${isGoogle ? 'Gemini' : isAnthropic ? 'Claude' : isOpenAI ? 'GPT-5' : isKimiGroq ? 'Kimi (Groq)' : 'Groq'} streaming: ${streamError.message}` 
+              await sendProgress({
+                type: 'error',
+                message: `Failed to initialize OpenRouter streaming: ${streamError.message}`
               });
-              
-              // If this is a Google model error, provide helpful info
-              if (isGoogle) {
-                await sendProgress({ 
-                  type: 'info', 
-                  message: 'Tip: Make sure your GEMINI_API_KEY is set correctly and has proper permissions.' 
-                });
-              }
-              
+
+              await sendProgress({
+                type: 'info',
+                message: 'Tip: Make sure your OPENROUTER_API_KEY is set correctly.'
+              });
+
               throw streamError;
             }
           }
@@ -1724,32 +1655,9 @@ Original request: ${prompt}
                 
 Provide the complete file content without any truncation. Include all necessary imports, complete all functions, and close all tags properly.`;
                 
-                // Make a focused API call to complete this specific file
-                // Create a new client for the completion based on the provider
-                let completionClient;
-                if (model.includes('gpt') || model.includes('openai')) {
-                  completionClient = openai;
-                } else if (model.includes('claude')) {
-                  completionClient = anthropic;
-                } else if (model === 'moonshotai/kimi-k2-instruct-0905') {
-                  completionClient = groq;
-                } else {
-                  completionClient = groq;
-                }
-                
-                // Determine the correct model name for the completion
-                let completionModelName: string;
-                if (model === 'moonshotai/kimi-k2-instruct-0905') {
-                  completionModelName = 'moonshotai/kimi-k2-instruct-0905';
-                } else if (model.includes('openai')) {
-                  completionModelName = model.replace('openai/', '');
-                } else if (model.includes('anthropic')) {
-                  completionModelName = model.replace('anthropic/', '');
-                } else if (model.includes('google')) {
-                  completionModelName = model.replace('google/', '');
-                } else {
-                  completionModelName = model;
-                }
+                // Make a focused API call to complete this specific file using OpenRouter
+                const completionClient = openrouter;
+                const completionModelName = model; // Use the same model
                 
                 const completionResult = await streamText({
                   model: completionClient(completionModelName),
@@ -1760,7 +1668,7 @@ Provide the complete file content without any truncation. Include all necessary 
                     },
                     { role: 'user', content: completionPrompt }
                   ],
-                  temperature: model.startsWith('openai/gpt-5') ? undefined : appConfig.ai.defaultTemperature
+                  temperature: appConfig.ai.defaultTemperature
                 });
                 
                 // Get the full text from the stream

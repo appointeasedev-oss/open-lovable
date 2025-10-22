@@ -1,5 +1,5 @@
 {
-  "name": "open-lovable",
+  "name": "aras-builder",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -16,7 +16,6 @@
     "@ai-sdk/openai": "^2.0.4",
     "@anthropic-ai/sdk": "^0.57.0",
     "@e2b/code-interpreter": "^2.0.0",
-    "@mendable/firecrawl-js": "^4.3.3",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-alert-dialog": "^1.1.15",
     "@radix-ui/react-aspect-ratio": "^1.1.7",
